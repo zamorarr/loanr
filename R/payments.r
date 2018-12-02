@@ -11,20 +11,22 @@
 compute_payments <- function(balance, income, rate, years,
                              plan = c("repaye"),
                              subsidized = FALSE,
-                             income_increase = 0.05
+                             income_increase = 0.05,
+                             family_size = 1
                              ) {
   # inputs
   plan <- match.arg(plan)
   interest <- 0
   repaye_rate <- 0.1
-  poverty_line <- 12140 # assuming single family
 
   df <- vector("list", years)
 
   # compute loan payments over time
   for (yr in seq_len(years)) {
+    # calculate payment per month
+    ppm <- compute_ppm(income, family_size, repaye_rate)
+
     # payment_per_year - interest_accrued
-    ppm <- (income - 1.5*poverty_line)*repaye_rate/12
     net_payment <- compute_net_payment(balance, rate, ppm)
 
     # subsidized interest
@@ -95,3 +97,23 @@ compute_subsidized_interest <- function(net_payment, govt_help) {
   if (net_payment >= 0) return(0)
   -net_payment*(1 - govt_help)
 }
+
+compute_poverty_line <- function(family_size) {
+  n <- nrow(poverty)
+  if (family_size <= n) {
+    poverty[["poverty_line"]][family_size]
+  } else {
+    poverty[["poverty_line"]][n] + 4320*(family_size - n)
+  }
+}
+
+#' Payments per month
+#'
+#' @param income adjusted gross income
+#' @param family_size members in family including self, spouse, and dependents
+#' @param repaye_rate REPAYE max payment rate is 10% of adjusted income
+compute_ppm <- function(income, family_size, repaye_rate = 0.1) {
+  poverty_line <- compute_poverty_line(family_size)
+  (income - 1.5*poverty_line)*repaye_rate/12
+}
+
