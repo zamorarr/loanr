@@ -1,63 +1,76 @@
 #' Compute payment plan
 #'
 #' @param balance current balance or principal
-#' @param rate interest rate
-#' @param ppm student payment per month
+#' @param income adjusted gross income
+#' @param rate interest rate on loan
 #' @param years number of years to calculate. Most debt forgiven after 25 years.
 #' @param plan which payment plan to use
 #' @param subsidized whether the government will help subsidze accrued interest
-#' @param ppm_increase how much to increase the monthly payment amount per year. This is done with the hopes that a student will get a good job and be able to pay more over time.
+#' @param income_increase Expected increase in income per year.
 #' @export
-compute_payments <- function(balance, rate, ppm, years,
-                             plan = c("repaye", "ibr"),
+compute_payments <- function(balance, income, rate, years,
+                             plan = c("repaye"),
                              subsidized = FALSE,
-                             ppm_increase = 0
+                             income_increase = 0.05
                              ) {
-  orig_balance <- balance
-  hidden_balance <- balance
+  # inputs
   plan <- match.arg(plan)
+  interest <- 0
+  repaye_rate <- 0.1
+  poverty_line <- 12140 # assuming single family
+
   df <- vector("list", years)
 
   # compute loan payments over time
   for (yr in seq_len(years)) {
     # payment_per_year - interest_accrued
+    ppm <- (income - 1.5*poverty_line)*repaye_rate/12
     net_payment <- compute_net_payment(balance, rate, ppm)
 
     # subsidized interest
     if (plan == "repaye") {
-        govt_help <- ifelse(subsidized*(yr <= 3), 1, 0.5)
+      govt_help <- ifelse(subsidized*(yr <= 3), 1, 0.5)
     } else {
       govt_help <- 0
     }
+    subsidized_interest <- compute_subsidized_interest(net_payment, govt_help)
 
-    hidden_interest <- compute_hidden_interest(net_payment, govt_help)
+    # new balances. pay off the interest first!
+    if (net_payment < 0) {
+      # interest more than payment
+      payment_to_interest <- -subsidized_interest
+      payment_to_balance <- 0
+    } else {
+      # payment more than interest
+      payment_to_interest <- min(interest, net_payment)
+      payment_to_balance <- net_payment - payment_to_interest
+    }
 
-
-    # new balances
-    hidden_balance <- hidden_balance + ifelse(net_payment >=0, -net_payment, hidden_interest)
-    new_balance <- min(balance - net_payment, balance)
+    new_balance <- balance - payment_to_balance
+    new_interest <- interest - payment_to_interest
 
     # update list
     df[[yr]] <- tibble::tibble(
       year = yr,
-      balance_before = balance,
-      interest_rate = rate,
-      interest = balance*rate,
-      payment = 12*ppm,
+      principal_before = balance,
+      interest_per_month = balance*rate/12,
+      payment_per_month = ppm,
       govt_help = govt_help,
-      new_balance = new_balance,
-      hidden_balance = hidden_balance,
-      hidden_interest = hidden_balance - new_balance
+      principal_after = new_balance,
+      interest_accrued = new_interest
     )
 
     # update balance
     balance <- new_balance
-    ppm <- ppm + ppm_increase
+    interest <- new_interest
+
+    # income increase causes payment increase
+    income <- income*(1 + income_increase)
   }
 
   # bind list
   dplyr::bind_rows(df) %>%
-    dplyr::filter(!!rlang::sym("hidden_balance") >= 0)
+    dplyr::filter(!!rlang::sym("principal_before") >= 0)
 }
 
 #' Compute the net yearly payment
@@ -72,15 +85,13 @@ compute_net_payment <- function(balance, rate, ppm) {
   12*ppm - balance*rate
 }
 
-#' Compute the hidden interest
+#' Compute the subsidized interest
 #'
-#' Sometimes loans will hide the interest if it causes the balance to exceed
-#' the original principal. This interest may be capitalized if you change plans
-#' or consolidate loans.
+#' Interest may be subsidized depending on your repayment plan.
 #'
 #' @param net_payment net payment
 #' @param govt_help percentage of subsidzation the government will provide
-compute_hidden_interest <- function(net_payment, govt_help) {
+compute_subsidized_interest <- function(net_payment, govt_help) {
   if (net_payment >= 0) return(0)
   -net_payment*(1 - govt_help)
 }
