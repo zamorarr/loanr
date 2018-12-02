@@ -114,6 +114,7 @@ compute_poverty_line <- function(family_size) {
 #' @param repaye_rate REPAYE max payment rate is 10% of adjusted income
 compute_ppm <- function(income, family_size, repaye_rate = 0.1) {
   poverty_line <- compute_poverty_line(family_size)
-  (income - 1.5*poverty_line)*repaye_rate/12
+  ppm <- (income - 1.5*poverty_line)*repaye_rate/12
+  max(ppm, 0)
 }
 
