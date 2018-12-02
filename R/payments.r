@@ -72,7 +72,8 @@ compute_payments <- function(balance, income, rate, years,
 
   # bind list
   dplyr::bind_rows(df) %>%
-    dplyr::filter(!!rlang::sym("principal_before") >= 0)
+    dplyr::filter(!!rlang::sym("principal_before") >= 0) %>%
+    dplyr::mutate(principal_after = pmax(0, !!rlang::sym("principal_after")))
 }
 
 #' Compute the net yearly payment
